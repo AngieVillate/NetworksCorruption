@@ -1,0 +1,148 @@
+leverage_glm <- function(fit.model, xlab, ylab, main, pch, col, identify, out){
+	if(class(fit.model)[1] != "glm" & class(fit.model)[1] != "lm" & class(fit.model)[1] != "negbin") 
+	  stop("Only lm-, glm- and glm.nb-type objects are supported!!",call.=FALSE)
+	if(missingArg(out)) out <- FALSE   
+	X <- model.matrix(fit.model)
+	n <- nrow(X)
+	p <- ncol(X)
+	if(class(fit.model)[1] == "lm"){
+	  if(any(fit.model$weights == 0)) stop("Only positive values of weights are allowed!!",call.=FALSE)
+	  if(is.null(fit.model$weights)) w <- matrix(1,n,1) else w <- fit.model$weights
+	}
+	Xw <- X*matrix(sqrt(w),n,p)
+	salida <- svd(Xw)
+	h <- round(apply(salida$u^2,1,sum),digits=6)
+    if(missingArg(xlab))  xlab="Index"
+    if(missingArg(ylab))  ylab="Leverage"
+    if(missingArg(main))  main=" "
+    if(missingArg(pch))   pch=20
+    if(missingArg(col))   col="black"
+    plot(h, xlab="Index", ylab="Leverage", main="", pch=20, type="h")
+    if(!missingArg(identify)) identify(h, n=identify)
+    if(out) return(stat=h)
+}
+
+Cookdis_glm <- function(fit.model, xlab, ylab, main, pch, col, identify, out){
+	if(class(fit.model)[1] != "glm" & class(fit.model)[1] != "lm" & class(fit.model)[1] != "negbin") 
+	  stop("Only lm-, glm- and glm.nb-type objects are supported!!",call.=FALSE)
+	if(missingArg(out)) out <- FALSE   
+	X <- model.matrix(fit.model)
+	n <- nrow(X)
+	p <- ncol(X)
+	if(class(fit.model)[1] == "glm"){
+	  if(any(fit.model$prior.weights == 0)) stop("Only positive values of weights are allowed!!",call.=FALSE)	
+	  w <- fit.model$weights
+	  if(fit.model$family$family=="poisson" & sd(fit.model$prior.weights)>0)
+	    stop("The option weights are not allowed for poisson family!!",call.=FALSE)
+	}
+	if(class(fit.model)[1] == "negbin"){
+	  if(any(fit.model$prior.weights == 0)) stop("Only positive values of weights are allowed!!",call.=FALSE)
+	  if(sd(fit.model$prior.weights)>0)
+		stop("The option weights are not allowed for negative binomial family!!",call.=FALSE)
+	  w <- fit.model$weights
+	}
+	if(class(fit.model)[1] == "lm"){
+	  if(any(fit.model$weights == 0)) stop("Only positive values of weights are allowed!!",call.=FALSE)
+	  if(is.null(fit.model$weights)) w <- matrix(1,n,1) else w <- fit.model$weights
+	}
+	Xw <- X*matrix(sqrt(w),n,p)
+	salida <- svd(Xw)
+	h <- round(apply(salida$u^2,1,sum),digits=6)
+	if(class(fit.model)[1] == "glm"){
+	  ts <- resid(fit.model,type="pearson")
+	  phi <- (n-p)/sum(ts^2)
+	  if(fit.model$family$family=="poisson" || fit.model$family$family=="binomial") phi <- 1
+	  td <- resid(fit.model,type="pearson")*sqrt(phi/(1-h))
+	}
+	if(class(fit.model)[1] == "negbin"){
+	  td <- resid(fit.model,type="pearson")*sqrt(1/(1-h))
+	}        
+	if(class(fit.model)[1] == "lm"){
+		ts <- resid(fit.model)
+        phi <- (n-p)/sum(ts^2*w)
+		td <- resid(fit.model)*sqrt(phi*w/(1-h))
+	}
+  dc <- (h/(1-h))*(td^2)
+  if(missingArg(xlab))  xlab="Index"
+  if(missingArg(ylab))  ylab="Cook distance"
+  if(missingArg(main))  main=" "
+  if(missingArg(pch))   pch=20
+  if(missingArg(col))   col="black"
+  plot(dc, xlab=xlab, ylab=ylab, main=main, pch=pch, col=col, type="h")
+  if(!missingArg(identify)) identify(dc, n=identify)
+  if(out) return(stat=dc)
+}
+
+
+case.deletion_glm <- function(fit.model,subset){
+	      if(class(fit.model)[1] != "glm" & class(fit.model)[1] != "lm" & class(fit.model)[1] != "negbin") 
+	        stop("Only lm-, glm- and glm.nb-type objects are supported!!",call.=FALSE)
+          if(missingArg(subset)) 
+		    stop("A subset of individuals must be specified!!",call.=FALSE)
+          X <- model.matrix(fit.model)
+		  n <- nrow(X)
+		  p <- ncol(X)
+		  cfit1 <- coef(fit.model)
+		  sefit1 <- sqrt(diag(vcov(fit.model)))
+		  pfit1 <- coef(fit.model)/sefit1
+		  pvalue  <- " Pr(>|t|) "
+		  pvalue2 <- " Pr(>|t|)*"
+	      if(class(fit.model)[1] == "lm"){
+     	      if(any(fit.model$weights == 0)) stop("Only positive values of weights are allowed!!",call.=FALSE)
+			  y <- resid(fit.model) + fitted(fit.model)
+			  fit0 <- lm(y ~ -1 + X, offset=fit.model$offset, weights=fit.model$weights, subset=subset)
+			  cfit0 <- coef(fit0)
+			  sefit0 <- sqrt(diag(vcov(fit0)))
+			  pfit0 <- coef(fit0)/sefit0
+			  pfit0 <- 2*pt(-abs(pfit0),nrow(model.matrix(fit0))-p)
+			  pfit1 <- 2*pt(-abs(pfit1),n-p)
+   		  }
+	      if(class(fit.model)[1] == "glm"){
+		  	if(any(fit.model$prior.weights == 0)) stop("Only positive values of weights are allowed!!",call.=FALSE)	
+	        if(fit.model$family$family=="poisson" & sd(fit.model$prior.weights)>0)
+	          stop("The option weights are not allowed for poisson family!!",call.=FALSE)
+			  y <- fit.model$y
+			  fit0 <- glm(y ~ -1 + X, family=fit.model$family, offset=fit.model$offset, weights=fit.model$prior.weights, subset=subset)
+			  cfit0 <- coef(fit0)
+			  sefit0 <- sqrt(diag(vcov(fit0)))
+			  pfit0 <- coef(fit0)/sefit0
+			  if(fit.model$family$family!="binomial" & fit.model$family$family!="poisson"){
+				  pfit1 <- 2*pt(-abs(pfit1),n-p)
+				  pfit0 <- 2*pt(-abs(pfit0),nrow(model.matrix(fit0))-p)
+		      }else{
+			      pfit1 <- 2*pnorm(-abs(pfit1))
+				  pfit0 <- 2*pnorm(-abs(pfit0))
+				  pvalue  <- " Pr(>|z|) "
+		          pvalue2 <- " Pr(>|z|)*"
+			  }
+		  }
+	      if(class(fit.model)[1] == "negbin"){
+	        if(any(fit.model$prior.weights == 0)) stop("Only positive values of weights are allowed!!",call.=FALSE)
+	        if(sd(fit.model$prior.weights)>0)
+		      stop("The option weights are not allowed for negative binomial family!!",call.=FALSE)
+	          w <- fit.model$weights
+			  y <- fit.model$y
+			  assign("links", fit.model$family$link, envir = .GlobalEnv)
+		      if(!is.null(fit.model$offset)) offset=fit.model$offset
+			  if(is.null(fit.model$offset))
+			  fit0 <- glm.nb(y ~ -1 + X, start=coef(fit.model), init.theta=fit.model$theta, link=links, subset=subset)
+		      else 
+		      fit0 <- glm.nb(y ~ -1 + X + offset(offset), start=coef(fit.model), init.theta=fit.model$theta, link=links, subset=subset)
+			  cfit0 <- coef(fit0)
+			  sefit0 <- sqrt(diag(vcov(fit0)))
+			  pfit0 <- coef(fit0)/sefit0
+			  pfit1 <- 2*pnorm(-abs(pfit1))
+			  pfit0 <- 2*pnorm(-abs(pfit0))
+			  pvalue  <- " Pr(>|z|) "
+		      pvalue2 <- " Pr(>|z|)*"
+		  }
+		  varc <- 100*(cfit0-cfit1)/abs(cfit1)
+		  lims <- rep(NA,length(cfit1))
+		  cmat <- cbind(cfit1,sefit1,pfit1,lims,cfit0,sefit0,pfit0,lims,varc)
+		  rownames(cmat) <- names(cfit1)
+		  colnames(cmat) <- c("Estimate ","Std. Error ",pvalue,"|","Estimate*","Std. Error*",pvalue2,"|","Change(%)")
+		  cat("\n")
+		  printCoefmat(cmat,digits=4,cs.ind=c(1,2,5,6), tst.ind=c(3,7), zap.ind=9, dig.tst=5, na.print="|")
+		  cat("\n(*) estimates, standard errors and p-values obtained using the specified subset of individuals.\n")
+}
+
